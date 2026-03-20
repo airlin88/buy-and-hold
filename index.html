@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>存股族 Buy & Hold</title>
+    <!-- 引入 Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 Chart.js 及 SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 動態背景 -->
+    <div class="background-elements">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <!-- 主要應用程式容器 (Glassmorphism) -->
+    <div class="app-container">
+        
+        <!-- 標頭列 -->
+        <header class="header">
+            <div class="logo-area">
+                <div class="logo-icon">📈</div>
+                <h1>存股族</h1>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button id="db-manager-btn" class="icon-btn" title="資料匯入與匯出">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><polyline points="14 2 14 8 20 8"/><path d="M2 15h10"/><path d="M9 18l3-3-3-3"/></svg>
+                </button>
+                <button id="refresh-btn" class="icon-btn" title="更新即時報價">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l5.67-5.67"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 主要視圖區域 -->
+        <main class="main-content">
+            <!-- 1. Dashboard View -->
+            <section id="view-dashboard" class="view active">
+                <div class="card summary-card">
+                    <p class="label">總市值 (NTD)</p>
+                    <h2 id="total-market-value" class="value">NT$ 0</h2>
+                    <div class="pnl-container">
+                        <span class="label">未實現損益:</span>
+                        <span id="total-unrealized-pnl" class="pnl-value positive">+ NT$ 0</span>
+                    </div>
+                    <div class="pnl-container" style="margin-top: 8px;">
+                        <span class="label">今年已實現損益:</span>
+                        <span id="total-realized-pnl" class="pnl-value positive">+ NT$ 0</span>
+                    </div>
+                </div>
+
+                <div class="card chart-card">
+                    <h3 class="card-title">資產佔比</h3>
+                    <div class="chart-container">
+                        <canvas id="portfolioChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. Holdings View -->
+            <section id="view-holdings" class="view hidden">
+                <div class="holdings-header" style="flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <h2 class="section-title" style="margin-bottom: 0;">庫存 (未實現損益)</h2>
+                        <button id="sync-quotes-btn" class="primary-btn" style="background: #3b82f6; font-size: 12px; padding: 6px 12px;">↻ 抓取最新股價</button>
+                    </div>
+                </div>
+                <div id="holdings-list" class="list-container">
+                    <!-- Javascript 將在此處渲染持股項目 -->
+                </div>
+            </section>
+
+            <!-- 3. History View -->
+            <section id="view-history" class="view hidden">
+                <div class="history-header">
+                    <h2 class="section-title">交易紀錄</h2>
+                    <button id="add-transaction-btn" class="primary-btn">+ 新增紀錄</button>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <input type="text" id="history-search-input" placeholder="🔍 搜尋股票代號、名稱..." style="width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); font-size: 14px; outline: none; transition: border-color 0.2s;">
+                </div>
+                <div id="history-list" class="list-container">
+                    <!-- Javascript 將在此處渲染交易項目 -->
+                </div>
+            </section>
+
+            <!-- 4. Realized View -->
+            <section id="view-realized" class="view hidden">
+                <div class="realized-header">
+                    <h2 class="section-title">已實現損益</h2>
+                </div>
+                
+                <div class="card chart-card">
+                    <h3 class="card-title">歷年交易損益</h3>
+                    <div class="chart-container">
+                        <canvas id="yearlyRealizedChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="section-title" style="margin-top:24px; font-size:18px;">各檔股票歷史損益</div>
+                <div id="realized-list" class="list-container">
+                    <!-- Javascript 將在此處渲染各檔已實現損益 -->
+                </div>
+            </section>
+
+        </main>
+
+        <!-- 底部導覽列 -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-target="view-dashboard">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                <span>總覽</span>
+            </button>
+            <button class="nav-item" data-target="view-holdings">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                <span>庫存</span>
+            </button>
+            <button class="nav-item" data-target="view-history">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>歷史</span>
+            </button>
+            <button class="nav-item" data-target="view-realized">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+                <span>已實現</span>
+            </button>
+        </nav>
+
+        <!-- 新增交易的 Modal 表單 (隱藏) -->
+        <div id="transaction-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>新增紀錄</h3>
+                    <button class="close-btn" id="close-modal-btn">&times;</button>
+                </div>
+                <form id="transaction-form" class="transaction-form">
+                    
+                    <div class="form-group">
+                        <label>交易類別</label>
+                        <div class="segmented-control">
+                            <input type="radio" id="type-buy" name="txType" value="buy" checked>
+                            <label for="type-buy">買進</label>
+                            
+                            <input type="radio" id="type-sell" name="txType" value="sell">
+                            <label for="type-sell">賣出</label>
+                            
+                            <input type="radio" id="type-dividend" name="txType" value="dividend">
+                            <label for="type-dividend">配息</label>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="txTicker">股票代號</label>
+                            <input type="text" id="txTicker" placeholder="ex: 0050" required>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="txName">名稱</label>
+                            <input type="text" id="txName" placeholder="ex: 元大台灣50" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="txDate">日期</label>
+                        <input type="date" id="txDate" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="txPrice" id="label-price">成交價/配息</label>
+                            <input type="number" id="txPrice" step="0.01" min="0" placeholder="0.0" required>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="txQuantity">數量 (股)</label>
+                            <input type="number" id="txQuantity" step="0.0001" min="0" placeholder="0" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row" id="group-fee">
+                        <div class="form-group flex-1">
+                            <label for="txDiscount">手續費折讓</label>
+                            <input type="number" id="txDiscount" step="0.01" min="0" value="0.28" required>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="txFee">系統計算手續費/稅</label>
+                            <input type="number" id="txFee" min="0" step="1" value="0" title="可手動覆寫，預設由系統自動計算買賣手續費及證交稅 (NTD)">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group hidden" id="group-exchange-rate" style="display: none; margin-top: 16px;">
+                        <label for="txExchangeRate">交易日匯率 (USD/TWD)</label>
+                        <input type="number" id="txExchangeRate" step="0.001" min="20" value="32.5" title="買賣時的美金兌台幣匯率">
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 6px;">※ 系統已偵測到美股。請輸入成交均價 (USD) 與匯率。手續費請直接輸入台幣 (NTD)，系統會在底層將成本全面換算為台幣。</div>
+                    </div>
+
+                    <div class="form-actions" style="display: flex; gap: 12px; margin-top: 24px;">
+                        <button type="button" class="cancel-btn" id="cancel-transaction-btn">取消返回</button>
+                        <button type="submit" class="submit-btn" style="margin-top: 0;">儲存紀錄</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 資料庫管理 Modal -->
+        <div id="db-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>資料匯出與匯入</h3>
+                    <button class="close-btn" id="close-db-modal-btn">&times;</button>
+                </div>
+                <div style="padding: 16px;">
+                    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 24px; line-height: 1.5;">您可以匯出當前所有歷史紀錄，或隨時匯入相容於「歷史交易紀錄.xlsx」格式的 Excel 檔案！<br><span style="color:#ef4444; font-weight:600; display:block; margin-top:8px;">⚠️ 注意：每次成功匯入 Excel 後，系統將「徹底清空」畫面上現有的舊資料，並完全以 Excel 的新資料為準覆蓋，請確保您的 Excel 文件為最新狀態！</span></p>
+                    
+                    <button id="export-excel-btn" class="primary-btn" style="background: #10b981; margin-bottom: 12px;">⬇️ 匯出最新交易紀錄 (Excel)</button>
+                    
+                    <label for="import-excel-file" class="primary-btn" style="background: #3b82f6; text-align: center; display: block; cursor: pointer;">⬆️ 從 Excel 匯入交易紀錄</label>
+                    <input type="file" id="import-excel-file" accept=".xlsx, .xls" style="display: none;">
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 引入 JavaScript -->
+    <script src="app.js"></script>
+</body>
+</html>
