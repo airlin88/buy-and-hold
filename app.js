@@ -5,6 +5,8 @@ const DB_KEY = 'buy_and_hold_data';
 // 只要將這串網址換成您部署的 GAS URL，系統就會自動進化成跨裝置雲端版！
 const GAS_DB_URL = "https://script.google.com/macros/s/AKfycbwtvT8Bw0gaUOlllGXfVW93k5CimkSoKybqREub_mPs83KZ_5Tua6X33VmqurcPBoSOTg/exec";
 
+
+
 async function loadData() {
     const raw = localStorage.getItem(DB_KEY);
     let localData = raw ? JSON.parse(raw) : { assets: [], transactions: [] };
@@ -29,10 +31,6 @@ async function loadData() {
             }
             if (data.assets && Array.isArray(data.assets)) {
                 data.assets.forEach(a => {
-                    // 自動修復被 Excel 錯殺零的 ETF 代號 (自癒機制)
-                    if (a.ticker && /^\d+$/.test(a.ticker) && parseInt(a.ticker, 10) < 1000) {
-                        a.ticker = '00' + a.ticker;
-                    }
                     if (a.firstDate) a.firstDate = new Date(a.firstDate);
                     if (a.lastDate) a.lastDate = new Date(a.lastDate);
                 });
@@ -48,13 +46,6 @@ async function loadData() {
         }
     }
 
-    if (localData.assets) {
-        localData.assets.forEach(a => {
-            if (a.ticker && /^\d+$/.test(a.ticker) && parseInt(a.ticker, 10) < 1000) {
-                a.ticker = '00' + a.ticker;
-            }
-        });
-    }
     if (localData.transactions) localData.transactions.forEach(t => t.date = new Date(t.date));
     return localData;
 }
@@ -66,12 +57,12 @@ function saveData(data) {
     // 如果有設定雲端網址，則把這包最新狀態默默背景傳送到 Google 試算表
     if (GAS_DB_URL) {
         // [進階防呆] 避免 Google 試算表自作聰明把 "00919" 當成數字 919 存起來
-        // 我們拷貝一份準備上傳的資料，在所有全數字的 ETF 股票代碼前加上單引號 "'"
+        // 我們拷貝一份準備上傳的資料，在所有 0 開頭的全數字股票代碼前加上單引號 "'"
         // 這會強制 Google Sheets 把它辨識為純文字 (純文字格式下，單引號會隱藏)
         let payload = JSON.parse(JSON.stringify(data));
         if (payload.assets) {
             payload.assets.forEach(a => {
-                if (a.ticker && /^\d+$/.test(a.ticker) && parseInt(a.ticker, 10) < 1000) {
+                if (a.ticker && typeof a.ticker === 'string' && /^0\d+$/.test(a.ticker)) {
                     a.ticker = "'" + a.ticker;
                 }
             });
@@ -1044,14 +1035,6 @@ document.getElementById('import-excel-file').addEventListener('change', (e) => {
             
             jsonData.forEach(row => {
                 let ticker = row["股票代號"] ? String(row["股票代號"]).trim() : "";
-                
-                // 【修復 Excel 自動去除前導零的問題】
-                // Excel 會把 "0050" 轉為數字 50，"00878" 轉為 878
-                // 台灣 ETF 皆以 "00" 開頭，因此數字若小於 1000 且為純數字，直接補回 "00"
-                if (/^\d+$/.test(ticker) && parseInt(ticker, 10) < 1000) {
-                    ticker = '00' + ticker;
-                }
-                
                 let name = row["名稱"] ? String(row["名稱"]).trim() : "";
                 let dateVal = row["日期"];
                 let typeStr = row["交易類別"];
