@@ -1011,7 +1011,7 @@ async function initApp() {
     
     // 成功解鎖進入系統
     document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('main-app').style.display = 'block';
+    document.getElementById('main-app').style.display = 'flex';
 
     document.getElementById('txDate').valueAsDate = new Date();
     await refreshUI();
