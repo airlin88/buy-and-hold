@@ -5,16 +5,64 @@ const DB_KEY = 'buy_and_hold_data';
 // 只要將這串網址換成您部署的 GAS URL，系統就會自動進化成跨裝置雲端版！
 const GAS_DB_URL = "https://script.google.com/macros/s/AKfycbwtvT8Bw0gaUOlllGXfVW93k5CimkSoKybqREub_mPs83KZ_5Tua6X33VmqurcPBoSOTg/exec";
 
+// 實作安全通行憑證
+let SYS_AUTH_TOKEN = localStorage.getItem('sys_auth_token') || "";
+
+// 登入介面邏輯
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pwd = document.getElementById('sys-password').value;
+    const btn = e.target.querySelector('button');
+    btn.textContent = "🚀 驗證加密通道中...";
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`${GAS_DB_URL}?pwd=${encodeURIComponent(pwd)}`);
+        const data = await res.json();
+        
+        if (data.error === "Unauthorized") {
+            document.getElementById('login-error').classList.remove('hidden');
+            btn.textContent = "解鎖進入 (Unlock)";
+            btn.disabled = false;
+        } else {
+            SYS_AUTH_TOKEN = pwd;
+            localStorage.setItem('sys_auth_token', pwd);
+            document.getElementById('login-error').classList.add('hidden');
+            btn.textContent = "✅ 解鎖成功！載入中...";
+            
+            // 將初次驗證已經抓好的 data 直接存入快取定案，避免重複抓取
+            localStorage.setItem(DB_KEY, JSON.stringify(data));
+            initApp();
+        }
+    } catch(err) {
+        alert("資料庫連線失敗，請檢查網路或稍後再試！");
+        btn.textContent = "解鎖進入 (Unlock)";
+        btn.disabled = false;
+    }
+});
+
+window.logout = function() {
+    SYS_AUTH_TOKEN = "";
+    localStorage.removeItem('sys_auth_token');
+    // 清空本地機密資料
+    localStorage.removeItem(DB_KEY);
+    location.reload();
+}
+
 
 
 async function loadData() {
     const raw = localStorage.getItem(DB_KEY);
     let localData = raw ? JSON.parse(raw) : { assets: [], transactions: [] };
 
-    if (GAS_DB_URL) {
+    if (GAS_DB_URL && SYS_AUTH_TOKEN) {
         try {
-            const res = await fetch(GAS_DB_URL);
+            const res = await fetch(`${GAS_DB_URL}?pwd=${encodeURIComponent(SYS_AUTH_TOKEN)}`);
             const data = await res.json();
+            
+            if (data.error === "Unauthorized") {
+                return data; // 將把這個錯誤傳到 initApp 處理
+            }
             
             // 【首次無縫轉移防呆】如果雲端是空的，但手機/電腦本身有資料，代表這是剛綁定，所以要把本地備份打上去！
             if (data.assets.length === 0 && data.transactions.length === 0 && (localData.assets.length > 0 || localData.transactions.length > 0)) {
@@ -55,11 +103,12 @@ function saveData(data) {
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     
     // 如果有設定雲端網址，則把這包最新狀態默默背景傳送到 Google 試算表
-    if (GAS_DB_URL) {
+    if (GAS_DB_URL && SYS_AUTH_TOKEN) {
         // [進階防呆] 避免 Google 試算表自作聰明把 "00919" 當成數字 919 存起來
         // 我們拷貝一份準備上傳的資料，在所有 0 開頭的全數字股票代碼前加上單引號 "'"
         // 這會強制 Google Sheets 把它辨識為純文字 (純文字格式下，單引號會隱藏)
         let payload = JSON.parse(JSON.stringify(data));
+        payload.pwd = SYS_AUTH_TOKEN; // 綁上通行密碼
         if (payload.assets) {
             payload.assets.forEach(a => {
                 if (a.ticker && typeof a.ticker === 'string' && /^0\d+$/.test(a.ticker)) {
@@ -940,9 +989,30 @@ async function initApp() {
     const refreshBtn = document.getElementById('refresh-btn');
     if (refreshBtn) refreshBtn.style.opacity = '0.5';
     
+    // 【存取控制閘門】如果沒有通行憑證，一律阻擋在大門外
+    if (!SYS_AUTH_TOKEN) {
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('main-app').style.display = 'none';
+        return;
+    }
+    
     // 進入時非同步抓取雲端資料
     currentData = await loadData();
     
+    // 如果通行證失效或後台拒絕存取
+    if (currentData.error === "Unauthorized") {
+        document.getElementById('login-overlay').style.display = 'flex';
+        document.getElementById('main-app').style.display = 'none';
+        document.getElementById('login-error').classList.remove('hidden');
+        SYS_AUTH_TOKEN = "";
+        localStorage.removeItem('sys_auth_token');
+        return;
+    }
+    
+    // 成功解鎖進入系統
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+
     document.getElementById('txDate').valueAsDate = new Date();
     await refreshUI();
     
