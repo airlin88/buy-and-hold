@@ -479,8 +479,9 @@ let currentQuotes = {};
 let chartInstance = null;
 let yearlyChartInstance = null;
 
-const formatCurrency = (num) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(num);
-const formatNumber = (num) => new Intl.NumberFormat('zh-TW').format(num);
+const formatCurrency = (num) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(num));
+const formatInteger = (num) => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(num));
+const formatFloat = (num) => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 4 }).format(num);
 
 async function refreshUI() {
     const tickers = currentData.assets.map(a => a.ticker);
@@ -558,10 +559,10 @@ function renderHoldings(holdings) {
             let subText = '';
             
             if (isUS && d.originalPrice) {
-                priceLabel = d.type === '配息' ? `每股配息 $${formatNumber(d.originalPrice)}` : `@ $${formatNumber(d.originalPrice)}`;
-                subText = `(匯率 ${d.exchangeRate}) (NT$${formatNumber(d.price * d.qty)})`;
+                priceLabel = d.type === '配息' ? `每股配息 $${formatFloat(d.originalPrice)}` : `@ $${formatFloat(d.originalPrice)}`;
+                subText = `(匯率 ${d.exchangeRate}) (NT$${formatInteger(d.price * d.qty)})`;
             } else {
-                priceLabel = d.type === '配息' ? `每股配息 ${formatCurrency(d.price)}` : `@ ${formatCurrency(d.price)}`;
+                priceLabel = d.type === '配息' ? `每股配息 ${formatFloat(d.price)}` : `@ ${formatFloat(d.price)}`;
             }
             
             return `
@@ -571,27 +572,32 @@ function renderHoldings(holdings) {
                             <span style="color: var(--text-secondary); width: 85px; display: inline-block;">${d.date.toLocaleDateString('zh-TW')}</span>
                             <span class="${typeColor}" style="padding: 2px 6px; border-radius: 4px; font-size: 11px;">${d.type}</span>
                         </div>
-                        <span style="font-weight: 500;">${formatNumber(d.qty)}股 ${priceLabel}</span>
+                        <span style="font-weight: 500;">${formatFloat(d.qty)}股 ${priceLabel}</span>
                     </div>
                     ${subText ? `<div style="width: 100%; text-align: right; color: var(--text-secondary); font-size: 11px; margin-top: 2px;">${subText}</div>` : ''}
                 </div>
             `;
         }).join('');
         
-        let priceStr = isUS ? '$' + formatNumber(h.currentMarketPriceUSD) : formatCurrency(h.currentMarketPrice);
-        let avgCostStr = isUS ? '$' + formatNumber(h.averageCostUSD) : formatCurrency(h.averageCost);
-        let mktValStr = isUS ? '$' + formatNumber(h.currentValueUSD) : formatCurrency(h.currentValue);
+        // 修正：針對美股換算台幣損益的 Bug，使用者期望看到純粹是 (USD 損益 * 當前匯率) 的數字，而不是包含歷史匯差的真實 TWD 成本差異
+        let displayTwdPnL = isUS ? (h.unrealizedPnLUSD * (window.liveUSDTWD || 32.5)) : h.unrealizedPnL;
+        let pnlColorClass = displayTwdPnL >= 0 ? 'positive' : 'negative';
+        let pnlTwdSign = displayTwdPnL >= 0 ? '+' : '';
+
+        let priceStr = isUS ? '$' + formatFloat(h.currentMarketPriceUSD) : formatFloat(h.currentMarketPrice);
+        let avgCostStr = isUS ? '$' + formatFloat(h.averageCostUSD) : formatFloat(h.averageCost);
+        let mktValStr = isUS ? '$' + formatInteger(h.currentValueUSD) : formatCurrency(h.currentValue);
         
         let pnlLines = '';
         if (isUS) {
             let pnlUSDColor = h.unrealizedPnLUSD >= 0 ? 'positive' : 'negative';
             let pnlUSDSign = h.unrealizedPnLUSD >= 0 ? '+' : '';
             pnlLines = `
-                <span class="stat-value ${pnlUSDColor}">${pnlUSDSign}$${formatNumber(h.unrealizedPnLUSD)} (${pnlUSDSign}${h.unrealizedPnLPctUSD.toFixed(2)}%)</span>
-                <span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">NT$${sign}${formatNumber(h.unrealizedPnL)} (匯率 ${window.liveUSDTWD || 32.5})</span>
+                <span class="stat-value ${pnlUSDColor}">${pnlUSDSign}$${formatInteger(h.unrealizedPnLUSD)} (${pnlUSDSign}${h.unrealizedPnLPctUSD.toFixed(2)}%)</span>
+                <span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;" class="${pnlColorClass}">NT$${pnlTwdSign}${formatInteger(displayTwdPnL)} (匯率 ${window.liveUSDTWD || 32.5})</span>
             `;
         } else {
-            pnlLines = `<span class="stat-value ${colorClass}">${sign}${formatCurrency(h.unrealizedPnL)} (${sign}${h.unrealizedPnLPct.toFixed(2)}%)</span>`;
+            pnlLines = `<span class="stat-value ${pnlColorClass}">${pnlTwdSign}${formatCurrency(displayTwdPnL)} (${pnlTwdSign}${h.unrealizedPnLPct.toFixed(2)}%)</span>`;
         }
         
         list.innerHTML += `
@@ -654,7 +660,7 @@ function renderHistory(transactions, assets) {
         
         let priceStr = formatCurrency(tx.price);
         if (tx.currency === 'USD' && tx.originalPrice) {
-            priceStr = `US$ ${tx.originalPrice.toFixed(2)} (匯率 ${tx.exchangeRate})`;
+            priceStr = `US$ ${formatFloat(tx.originalPrice)} (匯率 ${tx.exchangeRate})`;
         }
         const priceLabel = tx.type === 'dividend' ? `每股配息 ${priceStr}` : `@ ${priceStr}`;
         
@@ -667,7 +673,7 @@ function renderHistory(transactions, assets) {
                     </div>
                     <div class="stat-col stat-end" style="flex: 1; align-items: flex-end;">
                         <span class="tag-${tx.type}" style="margin-bottom: 4px;">${typeLabels[tx.type]}</span>
-                        <span class="stat-value">${formatNumber(tx.quantity)} 股 ${priceLabel}</span>
+                        <span class="stat-value">${formatFloat(tx.quantity)} 股 ${priceLabel}</span>
                         <span style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">價金: ${formatCurrency(tx.price * tx.quantity)} ｜ 手續費: ${formatCurrency(tx.fee || 0)}</span>
                     </div>
                     <button class="delete-btn" onclick="deleteTransaction('${tx.id}')" title="刪除輸入錯誤" style="margin-left: 12px; padding: 6px;">
@@ -735,7 +741,7 @@ function renderRealized(yearlyRealized, assetRealized) {
             const pctStr = d.pnlPct !== null ? `(${dSign}${d.pnlPct.toFixed(2)}%)` : '';
             return `
                 <div class="details-row">
-                    <span style="color: var(--text-secondary);">${d.date.toLocaleDateString('zh-TW')} <span class="tag-${d.type==='賣出'?'sell':'dividend'}">${d.type}</span> ${formatNumber(d.qty)}股</span>
+                    <span style="color: var(--text-secondary);">${d.date.toLocaleDateString('zh-TW')} <span class="tag-${d.type==='賣出'?'sell':'dividend'}">${d.type}</span> ${formatFloat(d.qty)}股</span>
                     <span class="${dColor}" style="font-weight: 600;">${dSign}${formatCurrency(d.pnl)} ${pctStr}</span>
                 </div>
             `;
