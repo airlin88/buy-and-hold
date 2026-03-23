@@ -2,8 +2,11 @@
 // 1. 本地/雲端資料庫雙軌並行 (Offline/Online Sync)
 // ==========================================
 const DB_KEY = 'buy_and_hold_data';
-// 只要將這串網址換成您部署的 GAS URL，系統就會自動進化成跨裝置雲端版！
+// 【第一把金鑰：資料庫網址】只要將這串網址換成您部署的資料庫 GAS URL，系統就會自動進化成跨裝置雲端版！
 const GAS_DB_URL = "https://script.google.com/macros/s/AKfycbwtvT8Bw0gaUOlllGXfVW93k5CimkSoKybqREub_mPs83KZ_5Tua6X33VmqurcPBoSOTg/exec";
+
+// 【第二把金鑰：報價引擎網址】GoogleFinance 中繼站代理伺服器 URL
+const GAS_QUOTE_URL = 'https://script.google.com/macros/s/AKfycbw1Aqd0jrbhQTmISli0a1l2kShnGNVjqF6Cs-9L5qxD-o1XyVPBMNdI5k1bzGaHtW-Ybg/exec';
 
 // 實作安全通行憑證
 let SYS_AUTH_TOKEN = localStorage.getItem('sys_auth_token') || "";
@@ -332,8 +335,6 @@ function calculatePortfolio(data, quotes) {
 // ==========================================
 // 3. 網路服務層 (StockQuoteService)
 // ==========================================
-// ★ 若您完成 Google Apps Script 部署，請將產生的網址貼到底下的引號中 ★
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbw1Aqd0jrbhQTmISli0a1l2kShnGNVjqF6Cs-9L5qxD-o1XyVPBMNdI5k1bzGaHtW-Ybg/exec'; // 例如: 'https://script.google.com/macros/s/AKfycb.../exec'
 
 async function fetchQuotes(tickers) {
     if (tickers.length === 0) return {};
@@ -346,9 +347,9 @@ async function fetchQuotes(tickers) {
     let debugErrors = [];
 
     // 0. 優先使用無敵的 Google Apps Script Proxy
-    if (GAS_API_URL) {
+    if (typeof GAS_QUOTE_URL !== 'undefined' && GAS_QUOTE_URL) {
         try {
-            const res = await fetch(`${GAS_API_URL}?q=${queryTickers.join(',')}`);
+            const res = await fetch(`${GAS_QUOTE_URL}?action=quote&tickers=${queryTickers.join(',')}`);
             if (res.ok) {
                 result = await res.json();
                 
