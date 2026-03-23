@@ -483,6 +483,7 @@ let yearlyChartInstance = null;
 const formatCurrency = (num) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(num));
 const formatInteger = (num) => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(num));
 const formatFloat = (num) => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 4 }).format(num);
+const formatPrice = (num) => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num);
 
 async function refreshUI() {
     const tickers = currentData.assets.map(a => a.ticker);
@@ -585,8 +586,8 @@ function renderHoldings(holdings) {
         let pnlColorClass = displayTwdPnL >= 0 ? 'positive' : 'negative';
         let pnlTwdSign = displayTwdPnL >= 0 ? '+' : '';
 
-        let priceStr = isUS ? '$' + formatFloat(h.currentMarketPriceUSD) : formatFloat(h.currentMarketPrice);
-        let avgCostStr = isUS ? '$' + formatFloat(h.averageCostUSD) : formatFloat(h.averageCost);
+        let priceStr = isUS ? '$' + formatPrice(h.currentMarketPriceUSD) : formatPrice(h.currentMarketPrice);
+        let avgCostStr = isUS ? '$' + formatPrice(h.averageCostUSD) : formatPrice(h.averageCost);
         let mktValStr = isUS ? '$' + formatInteger(h.currentValueUSD) : formatCurrency(h.currentValue);
         
         let pnlLines = '';
