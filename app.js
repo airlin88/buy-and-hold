@@ -613,7 +613,7 @@ function renderHoldings(holdings) {
                 <div class="item-row" style="margin-top: 8px;">
                     <div class="stat-col" style="flex: 0.8;">
                         <span class="stat-label">股數</span>
-                        <span class="stat-value">${formatNumber(h.totalShares)}</span>
+                        <span class="stat-value">${formatFloat(h.totalShares)}</span>
                     </div>
                     <div class="stat-col" style="flex: 1;">
                         <span class="stat-label">均價</span>
