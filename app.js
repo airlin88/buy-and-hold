@@ -349,7 +349,8 @@ async function fetchQuotes(tickers) {
     // 0. 優先使用無敵的 Google Apps Script Proxy
     if (typeof GAS_QUOTE_URL !== 'undefined' && GAS_QUOTE_URL) {
         try {
-            const res = await fetch(`${GAS_QUOTE_URL}?action=quote&tickers=${queryTickers.join(',')}`);
+            // 修正：完全對齊您目前建置的報價引擎參數格式 ?q=...
+            const res = await fetch(`${GAS_QUOTE_URL}?q=${queryTickers.join(',')}`);
             if (res.ok) {
                 result = await res.json();
                 
