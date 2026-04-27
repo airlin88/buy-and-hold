@@ -1,4 +1,9 @@
 // ==========================================
+// 🏷️ 存股族 V1.1 (2026-04-27)
+// ==========================================
+const APP_VERSION = 'V1.1';
+
+// ==========================================
 // 1. 本地/雲端資料庫雙軌並行 (Offline/Online Sync)
 // ==========================================
 const DB_KEY = 'buy_and_hold_data';
@@ -495,6 +500,10 @@ async function refreshUI() {
     renderHoldings(summary.holdings);
     renderHistory(currentData.transactions, currentData.assets);
     renderRealized(summary.yearlyRealized, summary.assetRealized);
+
+    // V1.1: 資產配置模組
+    currentHoldingsCache = summary.holdings;
+    renderAssetAllocation(summary.holdings);
 }
 
 function renderDashboard(holdings, totalMarketValue, totalUnrealizedPnL, totalUnrealizedPnLPct, totalRealizedThisYear, totalRealizedPctThisYear) {
@@ -543,6 +552,242 @@ function renderDashboard(holdings, totalMarketValue, totalUnrealizedPnL, totalUn
         }
     });
 }
+
+// ==========================================
+// 4b. 資產配置模組 (Asset Allocation — V1.1)
+// ==========================================
+const ALLOC_KEY = 'buy_and_hold_allocation';
+let allocationChartInstance = null;
+
+function loadAllocation() {
+    const raw = localStorage.getItem(ALLOC_KEY);
+    const defaults = {
+        cash:    [{ id: 'c_1', name: '帳戶A', amount: 0 }],
+        futures: [{ id: 'f_1', name: '帳戶A', amount: 0 }],
+        bonds:   [{ id: 'b_1', name: '帳戶A', amount: 0 }]
+    };
+    if (!raw) return defaults;
+    try {
+        const parsed = JSON.parse(raw);
+        return {
+            cash:    Array.isArray(parsed.cash) ? parsed.cash : defaults.cash,
+            futures: Array.isArray(parsed.futures) ? parsed.futures : defaults.futures,
+            bonds:   Array.isArray(parsed.bonds) ? parsed.bonds : defaults.bonds
+        };
+    } catch { return defaults; }
+}
+
+function saveAllocation(allocData) {
+    localStorage.setItem(ALLOC_KEY, JSON.stringify(allocData));
+}
+
+// 股票分類引擎：根據 ticker 自動判斷子類別
+function classifyHoldings(holdings) {
+    const groups = { twETF: [], twStock: [], usETF: [] };
+    holdings.forEach(h => {
+        if (h.currency === 'USD' || /^[A-Za-z\-]+$/.test(h.ticker)) {
+            groups.usETF.push(h);
+        } else if (/^00\d+/.test(h.ticker)) {
+            groups.twETF.push(h);
+        } else {
+            groups.twStock.push(h);
+        }
+    });
+    return groups;
+}
+
+function renderAssetAllocation(holdings) {
+    const allocData = loadAllocation();
+    const stockGroups = classifyHoldings(holdings);
+
+    // 計算各類別總額
+    const cashTotal    = allocData.cash.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const twETFTotal   = stockGroups.twETF.reduce((s, h) => s + h.currentValue, 0);
+    const twStockTotal = stockGroups.twStock.reduce((s, h) => s + h.currentValue, 0);
+    const usETFTotal   = stockGroups.usETF.reduce((s, h) => s + h.currentValue, 0);
+    const stockTotal   = twETFTotal + twStockTotal + usETFTotal;
+    const futuresTotal = allocData.futures.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const bondsTotal   = allocData.bonds.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const grandTotal   = cashTotal + stockTotal + futuresTotal + bondsTotal;
+
+    const pct = (v) => grandTotal > 0 ? ((v / grandTotal) * 100).toFixed(1) + '%' : '0%';
+    const subPct = (v) => stockTotal > 0 ? ((v / stockTotal) * 100).toFixed(1) + '%' : '0%';
+
+    // 繪製甜甜圈圖
+    const ctx = document.getElementById('allocationChart').getContext('2d');
+    if (allocationChartInstance) allocationChartInstance.destroy();
+
+    const chartData = [cashTotal, stockTotal, futuresTotal, bondsTotal];
+    const chartLabels = [
+        `💵 現金 ${pct(cashTotal)}`,
+        `📈 股票 ${pct(stockTotal)}`,
+        `📊 期貨 ${pct(futuresTotal)}`,
+        `🏦 債券 ${pct(bondsTotal)}`
+    ];
+    const chartColors = ['#10b981', '#6366f1', '#f59e0b', '#3b82f6'];
+
+    allocationChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: chartLabels,
+            datasets: [{ data: chartData, backgroundColor: chartColors, borderWidth: 0, hoverOffset: 8 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '65%',
+            plugins: {
+                legend: { position: 'right', labels: { color: '#f1f3f5', font: { family: 'Inter', size: 11 }, padding: 12 } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const v = ctx.raw;
+                            return ` ${formatCurrency(v)} (${pct(v)})`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 總資產文字
+    document.getElementById('allocation-total').innerHTML =
+        `總資產：<strong style="color: var(--text-primary); font-size: 15px;">${formatCurrency(grandTotal)}</strong>`;
+
+    // 渲染四大類別明細
+    const container = document.getElementById('allocation-sections');
+    container.innerHTML = '';
+
+    // — 1. 現金
+    container.innerHTML += buildManualSection('cash', '💵 現金', cashTotal, pct(cashTotal), allocData.cash, '#10b981');
+
+    // — 2. 股票（自動）
+    const stockSubHtml = `
+        <div style="padding: 0 12px 8px;">
+            ${buildStockSubRow('台股 ETF', twETFTotal, subPct(twETFTotal), stockGroups.twETF)}
+            ${buildStockSubRow('個股', twStockTotal, subPct(twStockTotal), stockGroups.twStock)}
+            ${buildStockSubRow('美股 ETF', usETFTotal, subPct(usETFTotal), stockGroups.usETF)}
+        </div>
+    `;
+    container.innerHTML += `
+        <div class="alloc-section" style="border: 1px solid var(--glass-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden;">
+            <div class="alloc-header" onclick="toggleAllocSection(this)" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; cursor: pointer; background: rgba(99,102,241,0.08);">
+                <span style="font-weight: 600; font-size: 14px;">📈 股票</span>
+                <span style="font-size: 13px; color: var(--text-secondary);">${formatCurrency(stockTotal)} <span style="color: #6366f1; font-weight: 600;">(${pct(stockTotal)})</span></span>
+            </div>
+            <div class="alloc-body" style="display: none;">
+                ${stockSubHtml}
+            </div>
+        </div>
+    `;
+
+    // — 3. 期貨
+    container.innerHTML += buildManualSection('futures', '📊 期貨', futuresTotal, pct(futuresTotal), allocData.futures, '#f59e0b');
+
+    // — 4. 債券
+    container.innerHTML += buildManualSection('bonds', '🏦 債券', bondsTotal, pct(bondsTotal), allocData.bonds, '#3b82f6');
+}
+
+function buildStockSubRow(label, total, pctStr, holdingsList) {
+    const detailItems = holdingsList.map(h =>
+        `<div style="display:flex; justify-content:space-between; padding: 3px 0; font-size: 12px; color: var(--text-secondary);">
+            <span>${h.name} (${h.ticker})</span>
+            <span>${formatCurrency(h.currentValue)}</span>
+        </div>`
+    ).join('');
+
+    return `
+        <div style="margin-bottom: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <span style="font-size: 13px; font-weight: 500;">${label}</span>
+                <span style="font-size: 13px; color: var(--text-secondary);">${formatCurrency(total)} <span style="font-weight: 600; color: #a78bfa;">(${pctStr})</span></span>
+            </div>
+            ${detailItems}
+        </div>
+    `;
+}
+
+function buildManualSection(category, icon, total, pctStr, accounts, accentColor) {
+    const accountRows = accounts.map((acc, idx) => `
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding: 0 12px;" data-category="${category}" data-id="${acc.id}">
+            <input type="text" value="${acc.name}" placeholder="帳戶名稱"
+                onchange="updateAllocName('${category}','${acc.id}',this.value)"
+                style="flex: 1; max-width: 90px; padding: 6px 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-primary); font-size: 12px; outline:none; font-family:inherit;">
+            <div style="flex: 2; position:relative;">
+                <span style="position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-secondary);">$</span>
+                <input type="number" value="${acc.amount || ''}" placeholder="0"
+                    onchange="updateAllocAmount('${category}','${acc.id}',this.value)"
+                    style="width:100%; padding: 6px 8px 6px 20px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-primary); font-size: 13px; outline:none; font-family:inherit; box-sizing:border-box;">
+            </div>
+            <button onclick="deleteAllocAccount('${category}','${acc.id}')" title="刪除帳戶"
+                style="background:none; border:none; color:#ef4444; cursor:pointer; padding:4px; font-size:16px; line-height:1; opacity: 0.7;">🗑️</button>
+        </div>
+    `).join('');
+
+    return `
+        <div class="alloc-section" style="border: 1px solid var(--glass-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden;">
+            <div class="alloc-header" onclick="toggleAllocSection(this)" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; cursor: pointer; background: ${accentColor}11;">
+                <span style="font-weight: 600; font-size: 14px;">${icon}</span>
+                <span style="font-size: 13px; color: var(--text-secondary);">${formatCurrency(total)} <span style="color: ${accentColor}; font-weight: 600;">(${pctStr})</span></span>
+            </div>
+            <div class="alloc-body" style="display: none; padding-top: 10px;">
+                ${accountRows}
+                <div style="padding: 0 12px 10px;">
+                    <button onclick="addAllocAccount('${category}')"
+                        style="width:100%; padding:7px; background:rgba(255,255,255,0.04); border:1px dashed var(--glass-border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:12px; font-family:inherit; transition: background 0.2s;">
+                        + 新增帳戶
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 資產配置互動事件
+window.toggleAllocSection = function(headerEl) {
+    const body = headerEl.nextElementSibling;
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+};
+
+window.updateAllocAmount = function(category, id, value) {
+    const data = loadAllocation();
+    const acc = data[category].find(a => a.id === id);
+    if (acc) {
+        acc.amount = parseFloat(value) || 0;
+        saveAllocation(data);
+        renderAssetAllocation(currentHoldingsCache);
+    }
+};
+
+window.updateAllocName = function(category, id, value) {
+    const data = loadAllocation();
+    const acc = data[category].find(a => a.id === id);
+    if (acc) {
+        acc.name = value;
+        saveAllocation(data);
+    }
+};
+
+window.addAllocAccount = function(category) {
+    const data = loadAllocation();
+    const count = data[category].length;
+    const letter = String.fromCharCode(65 + count); // A, B, C...
+    data[category].push({ id: category[0] + '_' + Date.now(), name: '帳戶' + letter, amount: 0 });
+    saveAllocation(data);
+    renderAssetAllocation(currentHoldingsCache);
+};
+
+window.deleteAllocAccount = function(category, id) {
+    const data = loadAllocation();
+    if (data[category].length <= 1) {
+        alert('至少需保留一個帳戶');
+        return;
+    }
+    data[category] = data[category].filter(a => a.id !== id);
+    saveAllocation(data);
+    renderAssetAllocation(currentHoldingsCache);
+};
+
+// 快取 holdings 供事件回呼使用
+let currentHoldingsCache = [];
 
 function renderHoldings(holdings) {
     const list = document.getElementById('holdings-list');
@@ -1021,6 +1266,10 @@ async function initApp() {
     // 成功解鎖進入系統
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('main-app').style.display = 'flex';
+
+    // 同步版本號至 UI 標題列
+    const vBadge = document.getElementById('app-version-badge');
+    if (vBadge) vBadge.textContent = APP_VERSION;
 
     document.getElementById('txDate').valueAsDate = new Date();
     await refreshUI();
